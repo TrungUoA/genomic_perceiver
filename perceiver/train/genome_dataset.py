@@ -27,13 +27,12 @@ import tensorflow_datasets as tfds
 #from perceiver.train import autoaugment
 
 Batch = Mapping[Text, np.ndarray]
-MEAN_RGB = (0.485 * 255, 0.456 * 255, 0.406 * 255)
-STDDEV_RGB = (0.229 * 255, 0.224 * 255, 0.225 * 255)
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 
 #INPUT_DIM = 224  # The number of pixels in the image resize.
 
 KMER = 6
+NUM_CLASSES = 3
 tf.random.set_seed(2022)
 
 def one_hot(seq, label):
@@ -72,26 +71,55 @@ def read_fasta_file(filename, label):
     return instances
 
 def read_sample_genomes():
-    alpha_samples = read_fasta_file("alpha.fna", label=0)
-    mers_samples = read_fasta_file("mers.fna", label=1)
-    covid_samples = read_fasta_file("SARS-Cov-2.fasta", label=2)
+    alpha_samples = read_fasta_file("data/coronavirus/alpha.fna", label=0)
+    mers_samples = read_fasta_file("data/coronavirus/mers.fna", label=1)
+    covid_samples = read_fasta_file("data/coronavirus/SARS-Cov-2.fasta", label=2)
     viral_squences = np.array(alpha_samples + mers_samples + covid_samples)
-    all_viruses = tf.data.Dataset.from_tensor_slices((viral_squences[:, 0],viral_squences[:, 1]))
-    all_viruses = all_viruses.map(one_hot)
+    all_viruses = tf.data.Dataset.from_tensor_slices( (viral_squences[:, 0], viral_squences[:, 1]) )
     return all_viruses.shuffle( len(all_viruses) )
 
 def max_length(data):
+    max_length = 0
     for gene, label in data.take(670):  # only take first element of dataset
         numpy_gene = gene.numpy()
         #counts[ labels.index(numpy_label) ] += 1
         if max_length < len(numpy_gene):
             max_length = len(numpy_gene)
 
-    return (max_length - KMER)/7
+    assert ( max_length - KMER ) % 7 == 0
+    return int( (max_length - KMER)/7 )
 
 all = read_sample_genomes()
-NUM_CLASSES = 3
 MAX_SEQ_LEN = max_length(all)
+
+from perceiver.dna_tokenizer import dna_tokenizer
+import functools
+
+# use decorator to input default max_len=MAX_SEQ_LEN
+def kmerlist_padding(max_len):
+    def wrapper_converter(func):
+        @functools.wraps(func)
+        def wrapper(gene_str):
+            seq = func(gene_str)
+            padded_seq = np.concatenate( [seq, np.repeat( dna_tokenizer.pad_token, (max_len - seq.shape[0]) )] )
+            return padded_seq
+        return wrapper
+
+    return wrapper_converter
+
+@kmerlist_padding(max_len=MAX_SEQ_LEN)
+def string_to_kmerlist(gene_str):
+    gene_seq = gene_str.decode("utf-8").split(sep=' ')
+    return dna_tokenizer.to_int(gene_seq)
+
+def tokenizing_input(gene_str, label_str):
+    gene = tf.numpy_function(func=string_to_kmerlist, inp=[gene_str], Tout=tf.int64)
+    label = tf.numpy_function(func=lambda x: tf.cast(int(x.decode("utf-8")), tf.int32), inp=[label_str], Tout=tf.int32)
+
+    return ( gene, label )    # convert label to int
+
+all = all.map(tokenizing_input)
+all = all.map(one_hot)
 
 class Split(enum.Enum):
   """ImageNet dataset split."""

@@ -41,7 +41,8 @@ import optax
 
 
 #from perceiver import io_processors
-from perceiver import perceiver, dna_tokenizer
+from perceiver import perceiver
+from perceiver.dna_tokenizer import dna_tokenizer
 from perceiver.train import genome_dataset as dataset
 from perceiver.train import utils
 
@@ -215,7 +216,7 @@ class Experiment(experiment.AbstractExperiment):
     self.mode = mode
     self.init_rng = init_rng
     self.config = config
-    self.tokenizer = dna_tokenizer.DNATokenizer()
+    self.tokenizer = dna_tokenizer
 
     # Checkpointed experiment state.
     self._params = None
@@ -244,13 +245,12 @@ class Experiment(experiment.AbstractExperiment):
 
     perceiver_kwargs = self.config.model.perceiver_kwargs
 
-    input_tokens = self.tokenizer.to_int(inputs.decode("utf-8"))
-    assert input_tokens.shape[1] == MAX_SEQ_LEN
+    #assert input_tokens.shape[1] == MAX_SEQ_LEN
 
     embedding_layer = hk.Embed(
         vocab_size=self.tokenizer.vocab_size,
         embed_dim=D_MODEL)
-    embedded_inputs = embedding_layer(input_tokens)
+    embedded_inputs = embedding_layer(inputs)
 
     batch_size = embedded_inputs.shape[0]
 
@@ -360,19 +360,15 @@ class Experiment(experiment.AbstractExperiment):
       self,
       params: hk.Params,
       state: hk.State,
-      inputs: dataset.Batch,
+      data: dataset.Batch,
       rng: jnp.ndarray,
   ) -> Tuple[jnp.ndarray, Tuple[Scalars, hk.State]]:
+    inputs = data.map(lambda x, y: x)
+    label_org = data.map(lambda x, y: y)
     logits, state = self.forward.apply(
         params, state, rng, inputs, is_training=True)
 
     label = self._one_hot(inputs['labels'])
-    # Handle cutmix/mixup label mixing:
-    if 'mix_labels' in inputs:
-      logging.info('Using mixup or cutmix!')
-      mix_label = self._one_hot(inputs['mix_labels'])
-      mix_ratio = inputs['ratio'][:, None]
-      label = mix_ratio * label + (1. - mix_ratio) * mix_label
 
     # Apply label-smoothing to one-hot labels.
     label_smoothing = self.config.training.label_smoothing
@@ -382,13 +378,13 @@ class Experiment(experiment.AbstractExperiment):
     if label_smoothing > 0:
       smooth_positives = 1. - label_smoothing
       smooth_negatives = label_smoothing / self.config.data.num_classes
-      label = smooth_positives * label + smooth_negatives
+      label = smooth_positives * label_org + smooth_negatives
 
     loss_w_batch = utils.softmax_cross_entropy(logits, label)
     loss = jnp.mean(loss_w_batch, dtype=loss_w_batch.dtype)
     scaled_loss = loss / jax.device_count()
 
-    metrics = utils.topk_correct(logits, inputs['labels'], prefix='')
+    metrics = utils.topk_correct(logits, label_org, prefix='')
     metrics = jax.tree_map(jnp.mean, metrics)
 
     top_1_acc = metrics['top_1_acc']

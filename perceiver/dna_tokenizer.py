@@ -15,6 +15,7 @@
 
 from typing import Union
 import numpy as np
+import tensorflow as tf
 
 
 class DNATokenizer:
@@ -29,9 +30,11 @@ class DNATokenizer:
 
   def to_int(self, inputs: Union[list, np.ndarray]) -> np.ndarray:
     if isinstance(inputs, list):
-      return np.array( [self._vocabs.index(i) for i in inputs] ).astype(np.int32)
-    encoded = np.array( np.where( inputs == self._vocabs[:, None] )[0] )
-    return encoded.astype(np.int32)
+      inputs = np.array(inputs)
+    encoded = np.where( inputs[:, None] == dna_tokenizer._vocabs[None, :] )[1]
+
+    return encoded #tf.cast( encoded, tf.int32 ) #.astype(np.int32)
+    # ### somehow the numpy_function always see the casted results as tf.int64?!
 
   @property
   def vocab_size(self) -> int:
@@ -60,3 +63,5 @@ class DNATokenizer:
   @property
   def sep_token(self) -> int:
     return 5
+
+dna_tokenizer = DNATokenizer(vocab_file="tokenization/vocab_6mer.txt")
