@@ -22,6 +22,22 @@ The scaled-up hyperparameters requires a distributed learning setup to run,
 and this script will need to be adapted to your specific setup.
 """
 
+import tensorflow as tf
+# tf.config.set_visible_devices([], 'GPU')
+## Set CUDA_VISIBLE_DEVICES=0,1,2,3 to restrict to the first 4 GPUs (in .bashrc or Edit Config if running in Pycharm)
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    try:
+        # Currently, memory growth needs to be the same across GPUs
+        #tf.config.set_visible_devices(gpus, 'GPU')
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+        logical_gpus = tf.config.list_logical_devices('GPU')
+        print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+    except RuntimeError as e:
+        # Memory growth must be set before GPUs have been initialized
+        print(e)
+
 import functools
 from typing import Generator, Mapping, Text, Tuple
 
@@ -51,7 +67,7 @@ FLAGS = flags.FLAGS
 OptState = Tuple[optax.TraceState, optax.ScaleByScheduleState, optax.ScaleState]
 Scalars = Mapping[Text, jnp.ndarray]
 
-
+N_USED_DEVICES = int(jax.device_count())
 N_TRAIN_EXAMPLES = dataset.Split.TRAIN_AND_VALID.num_examples
 N_CLASSES = 3
 # Only local/debug parameters are supported out of the box.
@@ -66,6 +82,13 @@ MAX_SEQ_LEN = dataset.MAX_SEQ_LEN
 def get_training_steps(batch_size, n_epochs):
   return (N_TRAIN_EXAMPLES * n_epochs) // batch_size
 
+def subset_local_devices(value, device_list=list(range(N_USED_DEVICES))):
+  """Broadcasts an object to all local devices."""
+  devices = jax.local_devices()
+  devices = [devices[i] for i in device_list]
+  return jax.tree_map(
+      lambda v: jax.device_put_sharded(len(devices) * [v], devices), value)
+
 def get_config():
   """Return config object for training."""
   use_debug_settings = IS_LOCAL
@@ -74,7 +97,7 @@ def get_config():
   # Experiment config.
   local_batch_size = 2
   # Modify this to adapt to your custom distributed learning setup
-  num_devices = jax.device_count()
+  num_devices = N_USED_DEVICES
   config.train_batch_size = local_batch_size * num_devices
   config.n_epochs = 10 #110
 
@@ -125,9 +148,9 @@ def get_config():
               model=dict(
                   perceiver_kwargs=dict(
                       encoder=dict(
-                          num_self_attends_per_block=_default_or_debug(6, 2),
+                          num_self_attends_per_block=_default_or_debug(4, 2),
                           # Weights won't be shared if num_blocks is set to 1.
-                          num_blocks=_default_or_debug(4, 1),
+                          num_blocks=_default_or_debug(8, 2),
                           z_index_dim=256,
                           num_z_channels=D_LATENTS,
                           num_cross_attend_heads=1,
@@ -148,13 +171,13 @@ def get_config():
                           # Position encoding for the output logits.
                           position_encoding_type='trainable',
                           trainable_position_encoding_kwargs=dict(
-                              num_channels=D_MODEL,
+                              num_channels=D_LATENTS,
                               init_scale=0.02,
                           ),
-                          qk_channels=8 * 32,
-                          v_channels=D_MODEL,
-                          num_heads=8,
-                          final_project=False
+                          #qk_channels=8 * 32,
+                          #v_channels=D_MODEL,
+                          num_heads=8#,
+                          #final_project=False
                       ),
                   ),
               ),
@@ -187,7 +210,7 @@ def get_config():
   config.save_checkpoint_interval = 300
   config.eval_specific_checkpoint_dir = ''
   config.best_model_eval_metric = 'eval_top_1_acc'
-  config.checkpoint_dir = '/tmp/perceiver_imagnet_checkpoints'
+  config.checkpoint_dir = '/tmp/perceiver_genome_checkpoints'
   config.train_checkpoint_all_hosts = False
 
   # Prevents accidentally setting keys that aren't recognized (e.g. in tests).
@@ -233,8 +256,7 @@ class Experiment(experiment.AbstractExperiment):
     # JAX (on some backends) to reuse the device memory associated with these
     # inputs to store the outputs of our function (which also start with
     # `params, state, opt_state`).
-    self._update_func = jax.pmap(self._update_func, axis_name='i',
-                                 donate_argnums=(0, 1, 2))
+    self._update_func = jax.pmap(self._update_func, axis_name='i', donate_argnums=(0, 1, 2))
     self._eval_batch = jax.jit(self._eval_batch)
 
   def _forward_fn(
@@ -292,12 +314,12 @@ class Experiment(experiment.AbstractExperiment):
     return scalars
 
   def _initialize_train(self):
-    self._train_input = jl_utils.py_prefetch(self._build_train_input)
+    self._train_input = jl_utils.py_prefetch(self._build_train_input, buffer_size=2)
 
     total_batch_size = self.config.training.batch_size
     steps_per_epoch = (
         self.config.training.instances_per_epoch / self.config.training.batch_size)
-    total_steps = self.config.training.n_epochs * steps_per_epoch
+    total_steps = int( self.config.training.n_epochs * steps_per_epoch )
     # Scale by the (negative) learning rate.
     self._lr_schedule = utils.get_learning_rate_schedule(
         total_batch_size, steps_per_epoch, total_steps, self.config.optimizer)
@@ -317,9 +339,9 @@ class Experiment(experiment.AbstractExperiment):
 
       # Init uses the same RNG key on all hosts+devices to ensure everyone
       # computes the same initial state.
-      init_rng = jl_utils.bcast_local_devices(self.init_rng)
+      init_rng = subset_local_devices(self.init_rng)        #jl_utils.bcast_local_devices
 
-      self._params, self._state = init_net(init_rng, inputs)
+      self._params, self._state = init_net(init_rng, inputs[0])
       self._opt_state = init_opt(self._params)
 
   def _load_data(self, split, is_training, batch_dims):
@@ -328,14 +350,14 @@ class Experiment(experiment.AbstractExperiment):
     return dataset.load(
         split=split,
         is_training=is_training,
-        batch_dims=batch_dims,
+        batch_dims=batch_dims
         #im_dim=self.config.data.im_dim,
-        augmentation_settings=self.config.data.augmentation,
+        #augmentation_settings=self.config.data.augmentation,
         )
 
   def _build_train_input(self) -> Generator[dataset.Batch, None, None]:
     """See base class."""
-    num_devices = jax.device_count()
+    num_devices = N_USED_DEVICES
     global_batch_size = self.config.training.batch_size
     per_device_batch_size, ragged = divmod(global_batch_size, num_devices)
 
@@ -349,7 +371,7 @@ class Experiment(experiment.AbstractExperiment):
     return self._load_data(
         split=split,
         is_training=True,
-        batch_dims=[jax.local_device_count(), per_device_batch_size])
+        batch_dims=[N_USED_DEVICES, per_device_batch_size])#[jax.local_device_count(), per_device_batch_size])
 
   def _one_hot(self, value):
     """One-hot encoding potentially over a sequence of labels."""
@@ -360,15 +382,13 @@ class Experiment(experiment.AbstractExperiment):
       self,
       params: hk.Params,
       state: hk.State,
-      data: dataset.Batch,
+      inputs: dataset.Batch,
       rng: jnp.ndarray,
   ) -> Tuple[jnp.ndarray, Tuple[Scalars, hk.State]]:
-    inputs = data.map(lambda x, y: x)
-    label_org = data.map(lambda x, y: y)
     logits, state = self.forward.apply(
-        params, state, rng, inputs, is_training=True)
+        params, state, rng, inputs[0], is_training=True)
 
-    label = self._one_hot(inputs['labels'])
+    label_org = self._one_hot(inputs[1])
 
     # Apply label-smoothing to one-hot labels.
     label_smoothing = self.config.training.label_smoothing
@@ -382,7 +402,7 @@ class Experiment(experiment.AbstractExperiment):
 
     loss_w_batch = utils.softmax_cross_entropy(logits, label)
     loss = jnp.mean(loss_w_batch, dtype=loss_w_batch.dtype)
-    scaled_loss = loss / jax.device_count()
+    scaled_loss = loss / N_USED_DEVICES
 
     metrics = utils.topk_correct(logits, label_org, prefix='')
     metrics = jax.tree_map(jnp.mean, metrics)
@@ -461,12 +481,12 @@ class Experiment(experiment.AbstractExperiment):
   ) -> Scalars:
     """Evaluates a batch."""
     logits, _ = self.forward.apply(
-        params, state, rng, inputs, is_training=False)
+        params, state, rng, inputs[0], is_training=False)
 
-    labels = self._one_hot(inputs['labels'])
+    labels = self._one_hot(inputs[1])
     loss = utils.softmax_cross_entropy(logits, labels)
 
-    metrics = utils.topk_correct(logits, inputs['labels'], prefix='')
+    metrics = utils.topk_correct(logits, inputs[1], prefix='')
     metrics = jax.tree_map(jnp.mean, metrics)
     top_1_acc = metrics['top_1_acc']
     top_5_acc = metrics['top_5_acc']
@@ -498,7 +518,7 @@ class Experiment(experiment.AbstractExperiment):
     state = jl_utils.get_first(self._state)
 
     for inputs in self._build_eval_input():
-      num_samples += inputs['labels'].shape[0]
+      num_samples += inputs[1].shape[0]
       scalars = self._eval_batch(params, state, inputs, rng)
 
       # Accumulate the sum of scalars for each step.
@@ -513,5 +533,7 @@ class Experiment(experiment.AbstractExperiment):
 
 
 if __name__ == '__main__':
-  flags.mark_flag_as_required('config')
-  app.run(functools.partial(platform.main, Experiment))
+
+    flags.mark_flag_as_required('config')
+    app.run(functools.partial(platform.main, Experiment))
+    print("Congrats!")

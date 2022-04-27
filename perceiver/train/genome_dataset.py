@@ -26,14 +26,16 @@ import tensorflow_datasets as tfds
 
 #from perceiver.train import autoaugment
 
-Batch = Mapping[Text, np.ndarray]
+#Batch = Mapping[Text, np.ndarray]
+Batch = Tuple[np.ndarray, np.ndarray]
 AUTOTUNE = tf.data.experimental.AUTOTUNE
+SEED = 2022
+tf.random.set_seed(SEED)
 
 #INPUT_DIM = 224  # The number of pixels in the image resize.
 
 KMER = 6
 NUM_CLASSES = 3
-tf.random.set_seed(2022)
 
 def one_hot(seq, label):
   """
@@ -70,26 +72,32 @@ def read_fasta_file(filename, label):
 
     return instances
 
-def read_sample_genomes():
+def read_sample_genomes(seed):
     alpha_samples = read_fasta_file("data/coronavirus/alpha.fna", label=0)
     mers_samples = read_fasta_file("data/coronavirus/mers.fna", label=1)
     covid_samples = read_fasta_file("data/coronavirus/SARS-Cov-2.fasta", label=2)
+
     viral_squences = np.array(alpha_samples + mers_samples + covid_samples)
+    # this shuffling shouldnot be done on a large dataset
+    np.random.seed(seed)
+    np.random.shuffle(viral_squences)
+
     all_viruses = tf.data.Dataset.from_tensor_slices( (viral_squences[:, 0], viral_squences[:, 1]) )
-    return all_viruses.shuffle( len(all_viruses) )
+    return all_viruses
 
 def max_length(data):
     max_length = 0
-    for gene, label in data.take(670):  # only take first element of dataset
+    #data_size = tf.data.experimental.cardinality(data)
+    for gene, label in data:  # only take first element of dataset
         numpy_gene = gene.numpy()
         #counts[ labels.index(numpy_label) ] += 1
         if max_length < len(numpy_gene):
             max_length = len(numpy_gene)
 
     assert ( max_length - KMER ) % 7 == 0
-    return int( (max_length - KMER)/7 )
+    return int( (max_length - KMER)/7 + 1 )
 
-all = read_sample_genomes()
+all = read_sample_genomes(SEED)
 MAX_SEQ_LEN = max_length(all)
 
 from perceiver.dna_tokenizer import dna_tokenizer
@@ -119,7 +127,7 @@ def tokenizing_input(gene_str, label_str):
     return ( gene, label )    # convert label to int
 
 all = all.map(tokenizing_input)
-all = all.map(one_hot)
+#all = all.map(one_hot)  # done in class Experiment
 
 class Split(enum.Enum):
   """ImageNet dataset split."""
@@ -160,15 +168,15 @@ def load(
   #tfds_split = tfds.core.ReadInstruction(_to_tfds_split(split),
   #                                       from_=start, to=end, unit='abs')
 
-  if start > 0:
-    ds = all.skip(start)
+  # select a subset of the dataset defined by the "split"
+  ds = all.skip(start)
   ds = ds.take(end - start)
   #('imagenet2012:5.*.*', split=tfds_split,
   #               decoders={'image': tfds.decode.SkipDecoding()})
 
   options = tf.data.Options()
-  options.experimental_threading.private_threadpool_size = threadpool_size
-  options.experimental_threading.max_intra_op_parallelism = (
+  options.threading.private_threadpool_size = threadpool_size
+  options.threading.max_intra_op_parallelism = (
       max_intra_op_parallelism)
   options.experimental_optimization.map_parallelization = True
   if is_training:
@@ -176,11 +184,11 @@ def load(
   ds = ds.with_options(options)
 
   if is_training:
-    if jax.host_count() > 1:
+    if jax.process_count() > 1:
       # Only cache if we are reading a subset of the dataset.
       ds = ds.cache()
     ds = ds.repeat()
-    ds = ds.shuffle(buffer_size=10 * total_batch_size, seed=0)
+    ds = ds.shuffle(buffer_size=10 * total_batch_size, seed=SEED)
 
   else:
     if split.num_examples % total_batch_size != 0:
