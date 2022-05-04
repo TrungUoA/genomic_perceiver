@@ -73,7 +73,7 @@ N_CLASSES = 3
 # Only local/debug parameters are supported out of the box.
 # To use the scaled-up hyperparameters, please adapt this script to your
 # training setup and set this flag to False
-IS_LOCAL = True
+IS_LOCAL = False#True
 
 D_MODEL = 768
 D_LATENTS = 1280
@@ -99,7 +99,7 @@ def get_config():
   # Modify this to adapt to your custom distributed learning setup
   num_devices = N_USED_DEVICES
   config.train_batch_size = local_batch_size * num_devices
-  config.n_epochs = 10 #110
+  config.n_epochs = 2 #110
 
   def _default_or_debug(default_value, debug_value):
     return debug_value if use_debug_settings else default_value
@@ -207,7 +207,7 @@ def get_config():
       config.get_oneway_ref('n_epochs'))
   config.log_train_data_interval = 60
   config.log_tensors_interval = 60
-  config.save_checkpoint_interval = 300
+  config.save_checkpoint_interval = 8
   config.eval_specific_checkpoint_dir = ''
   config.best_model_eval_metric = 'eval_top_1_acc'
   config.checkpoint_dir = '/tmp/perceiver_genome_checkpoints'
@@ -261,7 +261,7 @@ class Experiment(experiment.AbstractExperiment):
 
   def _forward_fn(
       self,
-      inputs: dataset.Batch,
+      inputs: np.ndarray,
       is_training: bool,
   ) -> jnp.ndarray:
 
@@ -531,6 +531,14 @@ class Experiment(experiment.AbstractExperiment):
     mean_scalars = jax.tree_map(lambda x: x / num_samples, summed_scalars)
     return mean_scalars
 
+def checkpoint_yourway(
+    config: config_dict.ConfigDict,
+    mode: str,
+) -> jl_utils.Checkpointer:
+  """Creates an object to be used as a checkpointer."""
+  return jl_utils.InMemoryCheckpointer(config, mode)
+
+platf_main_args = {"checkpointer_factory":checkpoint_yourway}
 
 if __name__ == '__main__':
 

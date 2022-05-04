@@ -22,12 +22,13 @@ import jax
 import numpy as np
 import tensorflow.compat.v2 as tf
 import tensorflow_datasets as tfds
+from snp_input import *
 #import tensorflow_probability as tfp
 
 #from perceiver.train import autoaugment
 
 #Batch = Mapping[Text, np.ndarray]
-Batch = Tuple[np.ndarray, np.ndarray]
+Batch = Tuple[np.ndarray, np.int32]
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 SEED = 2022
 tf.random.set_seed(SEED)
@@ -109,7 +110,7 @@ def kmerlist_padding(max_len):
         @functools.wraps(func)
         def wrapper(gene_str):
             seq = func(gene_str)
-            padded_seq = np.concatenate( [seq, np.repeat( dna_tokenizer.pad_token, (max_len - seq.shape[0]) )] )
+            padded_seq = np.concatenate( [seq, np.repeat( dna_tokenizer.pad_token, (max_len - seq.shape[0]) ).astype(np.int32)] )
             return padded_seq
         return wrapper
 
@@ -121,7 +122,7 @@ def string_to_kmerlist(gene_str):
     return dna_tokenizer.to_int(gene_seq)
 
 def tokenizing_input(gene_str, label_str):
-    gene = tf.numpy_function(func=string_to_kmerlist, inp=[gene_str], Tout=tf.int64)
+    gene = tf.numpy_function(func=string_to_kmerlist, inp=[gene_str], Tout=tf.int32)
     label = tf.numpy_function(func=lambda x: tf.cast(int(x.decode("utf-8")), tf.int32), inp=[label_str], Tout=tf.int32)
 
     return ( gene, label )    # convert label to int
