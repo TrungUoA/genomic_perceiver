@@ -366,7 +366,7 @@ class Experiment(experiment.AbstractExperiment):
           f'Global batch size {global_batch_size} must be divisible by '
           f'num devices {num_devices}')
 
-    split = dataset.Split.TRAIN_AND_VALID
+    split = "train" #dataset.Split.TRAIN_AND_VALID
 
     return self._load_data(
         split=split,
@@ -502,7 +502,7 @@ class Experiment(experiment.AbstractExperiment):
         'eval_top_1_acc': top_1_acc, 'eval_top_5_acc': top_5_acc}
 
   def _build_eval_input(self) -> Generator[dataset.Batch, None, None]:
-    split = dataset.Split.from_string(self.config.evaluation.subset)
+    split = "test" #dataset.Split.from_string(self.config.evaluation.subset)
 
     return self._load_data(
         split=split,

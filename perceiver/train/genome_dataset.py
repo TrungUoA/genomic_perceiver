@@ -150,7 +150,7 @@ class Split(enum.Enum):
 
 
 def load(
-    split: Split,
+    split: str,#Split,
     *,
     is_training: bool,
     # batch_dims should be:
@@ -162,18 +162,14 @@ def load(
     max_intra_op_parallelism: int = 1,
 ) -> Generator[Batch, None, None]:
   """Loads the given split of the dataset."""
-  start, end = _shard(split, jax.process_index(), jax.process_count()) #jax.host_id has been renamed to jax.process_index. This alias will eventually be removed;
-
   total_batch_size = np.prod(batch_dims)
-
-  #tfds_split = tfds.core.ReadInstruction(_to_tfds_split(split),
-  #                                       from_=start, to=end, unit='abs')
+  train, test, _, _, _ = get_data(save_pickle=True)
 
   # select a subset of the dataset defined by the "split"
-  ds = all.skip(start)
-  ds = ds.take(end - start)
-  #('imagenet2012:5.*.*', split=tfds_split,
-  #               decoders={'image': tfds.decode.SkipDecoding()})
+  if split == "train":
+      ds = tf.data.Dataset.from_tensor_slices((train[0], train[1]))
+  elif split == "test":
+      ds = tf.data.Dataset.from_tensor_slices((test[0], test[1]))
 
   options = tf.data.Options()
   options.threading.private_threadpool_size = threadpool_size
@@ -192,7 +188,7 @@ def load(
     ds = ds.shuffle(buffer_size=10 * total_batch_size, seed=SEED)
 
   else:
-    if split.num_examples % total_batch_size != 0:
+    if test[0].shape[1] % total_batch_size != 0:
       raise ValueError(f'Test/valid must be divisible by {total_batch_size}')
 
   for batch_size in reversed(batch_dims):

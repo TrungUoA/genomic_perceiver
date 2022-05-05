@@ -31,7 +31,7 @@ class DNATokenizer:
   def to_int(self, inputs: Union[list, np.ndarray]) -> np.ndarray:
     if isinstance(inputs, list):
       inputs = np.array(inputs)
-    encoded = np.where( inputs[:, None] == dna_tokenizer._vocabs[None, :] )[1]
+    encoded = ( np.where( inputs[:, None] == dna_tokenizer._vocabs[None, :] )[1] ).astype(np.int32)
 
     return encoded #tf.cast( encoded, tf.int32 ) #.astype(np.int32)
     # ### somehow the numpy_function always see the casted results as tf.int64?!
