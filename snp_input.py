@@ -104,10 +104,11 @@ def check_pos_neg_frac(dataset: data.TensorDataset):
             unknown = unknown + 1
     return pos, neg, unknown
 
-def get_train_test(geno, pheno, test_split, using_torchtensor=False, include_position=False):
+def get_train_test(geno, pheno, batch_size, test_split, using_torchtensor=False, include_position=False):
     urate = pheno["urate"].values
     gout = pheno["gout"].values
     test_cutoff = (int)(math.ceil(test_split * geno.tok_mat.shape[0]))
+    test_cutoff = int( test_cutoff / batch_size + 0.5 ) * batch_size
     test_seqs = geno.tok_mat[:test_cutoff,]
     test_phes = gout[:test_cutoff].astype(np.int32)
     train_seqs = geno.tok_mat[test_cutoff:,]
@@ -138,7 +139,7 @@ def get_train_test(geno, pheno, test_split, using_torchtensor=False, include_pos
     return training_dataset, test_dataset
 
 
-def get_data(save_pickle=False):
+def get_data(batch_size, save_pickle=False):
     enc_ver = 3
     geno_file = MY_DIR + plink_base + '_encv-' + str(enc_ver) + '_geno_cache.pickle'
     pheno_file = MY_DIR + plink_base +'_encv-' + str(enc_ver) +  '_pheno_cache.pickle'
@@ -161,7 +162,7 @@ def get_data(save_pickle=False):
                 pickle.dump(pheno, f, pickle.HIGHEST_PROTOCOL)
             print("done")
 
-    train, test = get_train_test(geno, pheno, 0.3)
+    train, test = get_train_test(geno, pheno, batch_size, 0.3)
     return train, test, geno, pheno, enc_ver
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ einops==0.3.0
 flatbuffers~=1.12.0
 imageio==2.9.0
 immutabledict==2.0.0
-jaxline==0.0.3
+jaxline==0.0.5
 numpy~=1.19.2
 opencv-python==4.5.2.54
 opt-einsum==3.3.0
@@ -17,3 +17,4 @@ tabulate==0.8.9
 tensorflow-addons==0.13.0
 tensorflow-datasets==4.3.0
 tensorflow-probability==0.13.0
+dask==2.11.0

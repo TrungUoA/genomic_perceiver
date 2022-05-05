@@ -69,7 +69,7 @@ Scalars = Mapping[Text, jnp.ndarray]
 
 N_USED_DEVICES = int(jax.device_count())
 N_TRAIN_EXAMPLES = dataset.Split.TRAIN_AND_VALID.num_examples
-N_CLASSES = 3
+N_CLASSES = 1
 # Only local/debug parameters are supported out of the box.
 # To use the scaled-up hyperparameters, please adapt this script to your
 # training setup and set this flag to False
@@ -207,7 +207,7 @@ def get_config():
       config.get_oneway_ref('n_epochs'))
   config.log_train_data_interval = 60
   config.log_tensors_interval = 60
-  config.save_checkpoint_interval = 8
+  config.save_checkpoint_interval = 12
   config.eval_specific_checkpoint_dir = ''
   config.best_model_eval_metric = 'eval_top_1_acc'
   config.checkpoint_dir = '/tmp/perceiver_genome_checkpoints'
@@ -388,7 +388,7 @@ class Experiment(experiment.AbstractExperiment):
     logits, state = self.forward.apply(
         params, state, rng, inputs[0], is_training=True)
 
-    label_org = self._one_hot(inputs[1])
+    label_org = inputs[1]
 
     # Apply label-smoothing to one-hot labels.
     label_smoothing = self.config.training.label_smoothing
@@ -483,7 +483,7 @@ class Experiment(experiment.AbstractExperiment):
     logits, _ = self.forward.apply(
         params, state, rng, inputs[0], is_training=False)
 
-    labels = self._one_hot(inputs[1])
+    labels = inputs[1]
     loss = utils.softmax_cross_entropy(logits, labels)
 
     metrics = utils.topk_correct(logits, inputs[1], prefix='')
@@ -519,7 +519,11 @@ class Experiment(experiment.AbstractExperiment):
 
     for inputs in self._build_eval_input():
       num_samples += inputs[1].shape[0]
+      #try:
       scalars = self._eval_batch(params, state, inputs, rng)
+      #except RuntimeError:
+        # temporary solution
+        #return {'eval_top_1_acc': -float('inf')}
 
       # Accumulate the sum of scalars for each step.
       scalars = jax.tree_map(lambda x: jnp.sum(x, axis=0), scalars)

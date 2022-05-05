@@ -98,8 +98,8 @@ def max_length(data):
     assert ( max_length - KMER ) % 7 == 0
     return int( (max_length - KMER)/7 + 1 )
 
-all = read_sample_genomes(SEED)
-MAX_SEQ_LEN = max_length(all)
+#all = read_sample_genomes(SEED)
+MAX_SEQ_LEN = 65803 #max_length(all)
 
 from perceiver.dna_tokenizer import dna_tokenizer
 import functools
@@ -127,7 +127,7 @@ def tokenizing_input(gene_str, label_str):
 
     return ( gene, label )    # convert label to int
 
-all = all.map(tokenizing_input)
+#all = all.map(tokenizing_input) #commented to use UKBB data
 #all = all.map(one_hot)  # done in class Experiment
 
 class Split(enum.Enum):
@@ -163,7 +163,7 @@ def load(
 ) -> Generator[Batch, None, None]:
   """Loads the given split of the dataset."""
   total_batch_size = np.prod(batch_dims)
-  train, test, _, _, _ = get_data(save_pickle=True)
+  train, test, _, _, _ = get_data(batch_size=total_batch_size, save_pickle=True)
 
   # select a subset of the dataset defined by the "split"
   if split == "train":
@@ -188,7 +188,7 @@ def load(
     ds = ds.shuffle(buffer_size=10 * total_batch_size, seed=SEED)
 
   else:
-    if test[0].shape[1] % total_batch_size != 0:
+    if test[0].shape[0] % total_batch_size != 0:
       raise ValueError(f'Test/valid must be divisible by {total_batch_size}')
 
   for batch_size in reversed(batch_dims):
