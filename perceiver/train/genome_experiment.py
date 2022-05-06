@@ -58,11 +58,13 @@ import optax
 
 #from perceiver import io_processors
 from perceiver import perceiver
-from perceiver.dna_tokenizer import dna_tokenizer
+#from perceiver.dna_tokenizer import dna_tokenizer
 from perceiver.train import genome_dataset as dataset
 from perceiver.train import utils
 
-from snp_input import tokenizer
+from snp_input import Tokenised_SNVs, load_vocab_size
+
+VOCAB_SIZE = load_vocab_size()
 
 FLAGS = flags.FLAGS
 
@@ -70,7 +72,7 @@ OptState = Tuple[optax.TraceState, optax.ScaleByScheduleState, optax.ScaleState]
 Scalars = Mapping[Text, jnp.ndarray]
 
 N_USED_DEVICES = int(jax.device_count())
-N_TRAIN_EXAMPLES = 13142
+N_TRAIN_EXAMPLES = 13148
 N_CLASSES = 2
 # Only local/debug parameters are supported out of the box.
 # To use the scaled-up hyperparameters, please adapt this script to your
@@ -97,7 +99,7 @@ def get_config():
   config = base_config.get_base_config()
 
   # Experiment config.
-  local_batch_size = 8
+  local_batch_size = 10
   # Modify this to adapt to your custom distributed learning setup
   num_devices = N_USED_DEVICES
   config.train_batch_size = local_batch_size * num_devices
@@ -209,7 +211,7 @@ def get_config():
       config.get_oneway_ref('n_epochs'))
   config.log_train_data_interval = 60
   config.log_tensors_interval = 60
-  config.save_checkpoint_interval = 360
+  config.save_checkpoint_interval = 480
   config.eval_specific_checkpoint_dir = ''
   config.best_model_eval_metric = 'eval_top_1_acc'
   config.checkpoint_dir = '/tmp/perceiver_genome_checkpoints'
@@ -241,7 +243,7 @@ class Experiment(experiment.AbstractExperiment):
     self.mode = mode
     self.init_rng = init_rng
     self.config = config
-    self.tokenizer = tokenizer
+    self.vocab_size = VOCAB_SIZE
 
     # Checkpointed experiment state.
     self._params = None
@@ -272,7 +274,7 @@ class Experiment(experiment.AbstractExperiment):
     #assert input_tokens.shape[1] == MAX_SEQ_LEN
 
     embedding_layer = hk.Embed(
-        vocab_size=self.tokenizer.num_toks,
+        vocab_size=self.vocab_size,
         embed_dim=D_MODEL)
     embedded_inputs = embedding_layer(inputs)
 

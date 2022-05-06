@@ -22,7 +22,7 @@ import jax
 import numpy as np
 import tensorflow.compat.v2 as tf
 import tensorflow_datasets as tfds
-from snp_input import *
+from snp_input import get_data
 #import tensorflow_probability as tfp
 
 #from perceiver.train import autoaugment

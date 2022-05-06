@@ -17,6 +17,7 @@ gwas_dir = os.environ['UKBB_DATA'] + "/"
 plink_base = os.environ['PLINK_FILE']
 urate_file = os.environ['URATE_FILE']
 MY_DIR = "/data/tugn232/ukbb/"
+_ENC_VER = 2
 
 class Tokenised_SNVs:
     def __init__(self, geno, encoding: int):
@@ -139,8 +140,7 @@ def get_train_test(geno, pheno, batch_size, test_split, using_torchtensor=False,
     return training_dataset, test_dataset
 
 
-def get_data(batch_size, save_pickle=False):
-    enc_ver = 3
+def get_data(enc_ver=_ENC_VER, test_split=0.3, batch_size=12, save_pickle=False):
     geno_file = MY_DIR + plink_base + '_encv-' + str(enc_ver) + '_geno_cache.pickle'
     pheno_file = MY_DIR + plink_base +'_encv-' + str(enc_ver) +  '_pheno_cache.pickle'
     if exists(geno_file) and exists(pheno_file):
@@ -162,14 +162,18 @@ def get_data(batch_size, save_pickle=False):
                 pickle.dump(pheno, f, pickle.HIGHEST_PROTOCOL)
             print("done")
 
-    train, test = get_train_test(geno, pheno, batch_size, 0.3)
+    train, test = get_train_test(geno, pheno, batch_size, test_split)
     return train, test, geno, pheno, enc_ver
 
-geno_file = MY_DIR + plink_base + '_encv-' + str(3) + '_geno_cache.pickle'
-if exists(geno_file):
-    with open(geno_file, "rb") as f:
-        tokenizer = pickle.load(f)
+def load_vocab_size():
+    geno_file = MY_DIR + plink_base + '_encv-' + str(_ENC_VER) + '_geno_cache.pickle'
+    if exists(geno_file):
+        with open(geno_file, "rb") as f:
+            tokenizer = pickle.load(f)
+            return tokenizer.num_toks
+    return 32
+
 
 if __name__ == "__main__":
-    train, test, geno, pheno, enc_ver = get_data(save_pickle=False)
+    train, test, geno, pheno, enc_ver = get_data(enc_ver=_ENC_VER, test_split=0.3, batch_size=12, save_pickle=True)
     print("test")
