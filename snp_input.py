@@ -110,9 +110,9 @@ def get_train_test(geno, pheno, batch_size, test_split, using_torchtensor=False,
     test_cutoff = (int)(math.ceil(test_split * geno.tok_mat.shape[0]))
     test_cutoff = int( test_cutoff / batch_size + 0.5 ) * batch_size
     test_seqs = geno.tok_mat[:test_cutoff,]
-    test_phes = gout[:test_cutoff].astype(np.int32)
+    test_phes = gout[:test_cutoff].astype(np.int32)#[:, None]
     train_seqs = geno.tok_mat[test_cutoff:,]
-    train_phes = gout[test_cutoff:,].astype(np.int32)
+    train_phes = gout[test_cutoff:,].astype(np.int32)#[:, None]
     print("seqs shape: ", train_seqs.shape)
     print("phes shape: ", train_phes.shape)
 

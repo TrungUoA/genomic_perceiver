@@ -40,7 +40,7 @@ def any_in(prediction, target):
   return jnp.isin(prediction, target)
 
 
-def topk_correct(logits, labels, mask=None, prefix='', topk=(1, 5)):
+def topk_correct(logits, labels, mask=None, prefix='', topk=[1, 5]):
   """Calculate top-k error for multiple k values."""
   metrics = {}
   argsorted_logits = jnp.argsort(logits)

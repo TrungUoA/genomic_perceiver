@@ -71,7 +71,7 @@ Scalars = Mapping[Text, jnp.ndarray]
 
 N_USED_DEVICES = int(jax.device_count())
 N_TRAIN_EXAMPLES = 13142
-N_CLASSES = 1
+N_CLASSES = 2
 # Only local/debug parameters are supported out of the box.
 # To use the scaled-up hyperparameters, please adapt this script to your
 # training setup and set this flag to False
@@ -97,7 +97,7 @@ def get_config():
   config = base_config.get_base_config()
 
   # Experiment config.
-  local_batch_size = 4
+  local_batch_size = 8
   # Modify this to adapt to your custom distributed learning setup
   num_devices = N_USED_DEVICES
   config.train_batch_size = local_batch_size * num_devices
@@ -209,7 +209,7 @@ def get_config():
       config.get_oneway_ref('n_epochs'))
   config.log_train_data_interval = 60
   config.log_tensors_interval = 60
-  config.save_checkpoint_interval = 240
+  config.save_checkpoint_interval = 360
   config.eval_specific_checkpoint_dir = ''
   config.best_model_eval_metric = 'eval_top_1_acc'
   config.checkpoint_dir = '/tmp/perceiver_genome_checkpoints'
@@ -390,7 +390,7 @@ class Experiment(experiment.AbstractExperiment):
     logits, state = self.forward.apply(
         params, state, rng, inputs[0], is_training=True)
 
-    label_org = self._one_hot(inputs[1]) #inputs[1]
+    label_org = self._one_hot(inputs[1])
 
     # Apply label-smoothing to one-hot labels.
     label_smoothing = self.config.training.label_smoothing
@@ -406,17 +406,17 @@ class Experiment(experiment.AbstractExperiment):
     loss = jnp.mean(loss_w_batch, dtype=loss_w_batch.dtype)
     scaled_loss = loss / N_USED_DEVICES
 
-    metrics = utils.topk_correct(logits, label_org, prefix='')
+    metrics = utils.topk_correct(logits, inputs[1], prefix='', topk=[1])
     metrics = jax.tree_map(jnp.mean, metrics)
 
     top_1_acc = metrics['top_1_acc']
-    top_5_acc = metrics['top_5_acc']
+    #top_5_acc = metrics['top_5_acc']
 
     loss_scalars = dict(
         loss=loss,
-        top_1_acc=top_1_acc,
-        top_5_acc=top_5_acc,
-    )
+        top_1_acc=top_1_acc)#,
+        #top_5_acc=top_5_acc,
+    #)
 
     return scaled_loss, (loss_scalars, state)
 
@@ -491,20 +491,20 @@ class Experiment(experiment.AbstractExperiment):
     labels = self._one_hot(inputs[1])
     loss = utils.softmax_cross_entropy(logits, labels)
 
-    metrics = utils.topk_correct(logits, inputs[1], prefix='')
+    metrics = utils.topk_correct(logits, inputs[1], prefix='', topk=[1])
     metrics = jax.tree_map(jnp.mean, metrics)
     top_1_acc = metrics['top_1_acc']
-    top_5_acc = metrics['top_5_acc']
+    #top_5_acc = metrics['top_5_acc']
 
     bs = logits.shape[0]
 
     top_1_acc = jnp.expand_dims(top_1_acc, axis=0) * bs
-    top_5_acc = jnp.expand_dims(top_5_acc, axis=0) * bs
+    #top_5_acc = jnp.expand_dims(top_5_acc, axis=0) * bs
 
     # NOTE: Returned values will be summed and finally divided by num_samples.
     return {
         'eval_loss': loss,
-        'eval_top_1_acc': top_1_acc, 'eval_top_5_acc': top_5_acc}
+        'eval_top_1_acc': top_1_acc}#, 'eval_top_5_acc': top_5_acc}
 
   def _build_eval_input(self) -> Generator[dataset.Batch, None, None]:
     split = "test" #dataset.Split.from_string(self.config.evaluation.subset)
