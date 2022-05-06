@@ -62,20 +62,22 @@ from perceiver.dna_tokenizer import dna_tokenizer
 from perceiver.train import genome_dataset as dataset
 from perceiver.train import utils
 
+from snp_input import tokenizer
+
 FLAGS = flags.FLAGS
 
 OptState = Tuple[optax.TraceState, optax.ScaleByScheduleState, optax.ScaleState]
 Scalars = Mapping[Text, jnp.ndarray]
 
 N_USED_DEVICES = int(jax.device_count())
-N_TRAIN_EXAMPLES = dataset.Split.TRAIN_AND_VALID.num_examples
+N_TRAIN_EXAMPLES = 13142
 N_CLASSES = 1
 # Only local/debug parameters are supported out of the box.
 # To use the scaled-up hyperparameters, please adapt this script to your
 # training setup and set this flag to False
 IS_LOCAL = False#True
 
-D_MODEL = 768
+D_MODEL = 512
 D_LATENTS = 1280
 MAX_SEQ_LEN = dataset.MAX_SEQ_LEN
 
@@ -95,11 +97,11 @@ def get_config():
   config = base_config.get_base_config()
 
   # Experiment config.
-  local_batch_size = 2
+  local_batch_size = 4
   # Modify this to adapt to your custom distributed learning setup
   num_devices = N_USED_DEVICES
   config.train_batch_size = local_batch_size * num_devices
-  config.n_epochs = 2 #110
+  config.n_epochs = 20 #110
 
   def _default_or_debug(default_value, debug_value):
     return debug_value if use_debug_settings else default_value
@@ -148,9 +150,9 @@ def get_config():
               model=dict(
                   perceiver_kwargs=dict(
                       encoder=dict(
-                          num_self_attends_per_block=_default_or_debug(4, 2),
+                          num_self_attends_per_block=_default_or_debug(8, 2),
                           # Weights won't be shared if num_blocks is set to 1.
-                          num_blocks=_default_or_debug(8, 2),
+                          num_blocks=_default_or_debug(16, 2),
                           z_index_dim=256,
                           num_z_channels=D_LATENTS,
                           num_cross_attend_heads=1,
@@ -207,7 +209,7 @@ def get_config():
       config.get_oneway_ref('n_epochs'))
   config.log_train_data_interval = 60
   config.log_tensors_interval = 60
-  config.save_checkpoint_interval = 12
+  config.save_checkpoint_interval = 240
   config.eval_specific_checkpoint_dir = ''
   config.best_model_eval_metric = 'eval_top_1_acc'
   config.checkpoint_dir = '/tmp/perceiver_genome_checkpoints'
@@ -239,7 +241,7 @@ class Experiment(experiment.AbstractExperiment):
     self.mode = mode
     self.init_rng = init_rng
     self.config = config
-    self.tokenizer = dna_tokenizer
+    self.tokenizer = tokenizer
 
     # Checkpointed experiment state.
     self._params = None
@@ -256,7 +258,7 @@ class Experiment(experiment.AbstractExperiment):
     # JAX (on some backends) to reuse the device memory associated with these
     # inputs to store the outputs of our function (which also start with
     # `params, state, opt_state`).
-    self._update_func = jax.pmap(self._update_func, axis_name='i', donate_argnums=(0, 1, 2))
+    self._update_func = jax.pmap(self._update_func, axis_name='i')#, donate_argnums=(0, 1, 2))
     self._eval_batch = jax.jit(self._eval_batch)
 
   def _forward_fn(
@@ -270,7 +272,7 @@ class Experiment(experiment.AbstractExperiment):
     #assert input_tokens.shape[1] == MAX_SEQ_LEN
 
     embedding_layer = hk.Embed(
-        vocab_size=self.tokenizer.vocab_size,
+        vocab_size=self.tokenizer.num_toks,
         embed_dim=D_MODEL)
     embedded_inputs = embedding_layer(inputs)
 
@@ -388,7 +390,7 @@ class Experiment(experiment.AbstractExperiment):
     logits, state = self.forward.apply(
         params, state, rng, inputs[0], is_training=True)
 
-    label_org = inputs[1]
+    label_org = self._one_hot(inputs[1]) #inputs[1]
 
     # Apply label-smoothing to one-hot labels.
     label_smoothing = self.config.training.label_smoothing
@@ -470,6 +472,9 @@ class Experiment(experiment.AbstractExperiment):
     scalars = jax.device_get(self._eval_epoch(jl_utils.get_first(rng)))
 
     logging.info('[Step %d] Eval scalars: %s', global_step, scalars)
+    for k, v in scalars.items():
+        if isinstance(v, np.ndarray) and v.ndim == 0:
+            scalars[k] = float(v)
     return scalars
 
   def _eval_batch(
@@ -483,7 +488,7 @@ class Experiment(experiment.AbstractExperiment):
     logits, _ = self.forward.apply(
         params, state, rng, inputs[0], is_training=False)
 
-    labels = inputs[1]
+    labels = self._one_hot(inputs[1])
     loss = utils.softmax_cross_entropy(logits, labels)
 
     metrics = utils.topk_correct(logits, inputs[1], prefix='')
@@ -519,11 +524,7 @@ class Experiment(experiment.AbstractExperiment):
 
     for inputs in self._build_eval_input():
       num_samples += inputs[1].shape[0]
-      #try:
       scalars = self._eval_batch(params, state, inputs, rng)
-      #except RuntimeError:
-        # temporary solution
-        #return {'eval_top_1_acc': -float('inf')}
 
       # Accumulate the sum of scalars for each step.
       scalars = jax.tree_map(lambda x: jnp.sum(x, axis=0), scalars)

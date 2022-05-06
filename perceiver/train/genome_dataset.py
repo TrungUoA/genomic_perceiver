@@ -163,7 +163,7 @@ def load(
 ) -> Generator[Batch, None, None]:
   """Loads the given split of the dataset."""
   total_batch_size = np.prod(batch_dims)
-  train, test, _, _, _ = get_data(batch_size=total_batch_size, save_pickle=True)
+  train, test, tokenizer, _, _ = get_data(batch_size=total_batch_size, save_pickle=True)
 
   # select a subset of the dataset defined by the "split"
   if split == "train":

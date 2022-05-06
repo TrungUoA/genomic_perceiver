@@ -165,6 +165,11 @@ def get_data(batch_size, save_pickle=False):
     train, test = get_train_test(geno, pheno, batch_size, 0.3)
     return train, test, geno, pheno, enc_ver
 
+geno_file = MY_DIR + plink_base + '_encv-' + str(3) + '_geno_cache.pickle'
+if exists(geno_file):
+    with open(geno_file, "rb") as f:
+        tokenizer = pickle.load(f)
+
 if __name__ == "__main__":
     train, test, geno, pheno, enc_ver = get_data(save_pickle=False)
     print("test")
