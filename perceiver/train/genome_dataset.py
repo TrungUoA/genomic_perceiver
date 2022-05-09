@@ -37,6 +37,7 @@ tf.random.set_seed(SEED)
 
 KMER = 6
 NUM_CLASSES = 3
+MAX_SNV_POS = 10000000
 
 def one_hot(seq, label):
   """
@@ -163,7 +164,11 @@ def load(
 ) -> Generator[Batch, None, None]:
   """Loads the given split of the dataset."""
   total_batch_size = np.prod(batch_dims)
-  train, test, tokenizer, _, _ = get_data(batch_size=total_batch_size, save_pickle=True)
+  train, test, tokenizer, _, _, pos_vec = get_data(batch_size=total_batch_size, save_pickle=True)
+
+  global MAX_SNV_POS, pos
+  MAX_SNV_POS = int( tokenizer.positions.max() )
+  pos = pos_vec
 
   # select a subset of the dataset defined by the "split"
   if split == "train":

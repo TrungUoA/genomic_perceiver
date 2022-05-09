@@ -118,26 +118,12 @@ def get_train_test(geno, pheno, batch_size, test_split, using_torchtensor=False,
     print("phes shape: ", train_phes.shape)
 
     if using_torchtensor:
-        if include_position:
-            positions = tensor(geno.positions)
-            training_dataset = data.TensorDataset(
-                positions.repeat(len(train_seqs), 1), tensor(train_seqs), tensor(train_phes, dtype=torch.int64)
-            )
-            test_dataset = data.TensorDataset(
-                positions.repeat(len(test_seqs), 1), tensor(test_seqs), tensor(test_phes, dtype=torch.int64)
-            )
-        else:
-            training_dataset = data.TensorDataset( tensor(train_seqs), tensor(train_phes, dtype=torch.int64) )
-            test_dataset = data.TensorDataset( tensor(test_seqs), tensor(test_phes, dtype=torch.int64) )
+        training_dataset = data.TensorDataset( tensor(train_seqs), tensor(train_phes, dtype=torch.int64) )
+        test_dataset = data.TensorDataset( tensor(test_seqs), tensor(test_phes, dtype=torch.int64) )
     else:
-        if include_position:
-            positions = geno.positions.value
-            training_dataset = ( np.tile( positions, [len(train_seqs),1]), train_seqs, train_phes )
-            test_dataset = ( np.tile( positions, [len(train_seqs),1]), test_seqs, test_phes )
-        else:
-            training_dataset = ( train_seqs, train_phes )
-            test_dataset = ( test_seqs, test_phes )
-    return training_dataset, test_dataset
+        training_dataset = ( train_seqs, train_phes )
+        test_dataset = ( test_seqs, test_phes )
+    return training_dataset, test_dataset, geno.positions.numpy()
 
 
 def get_data(enc_ver=_ENC_VER, test_split=0.3, batch_size=12, save_pickle=False):
@@ -150,20 +136,20 @@ def get_data(enc_ver=_ENC_VER, test_split=0.3, batch_size=12, save_pickle=False)
             pheno = pickle.load(f)
     else:
         # geno, pheno = read_from_plink(small_set=True)
-        print("reading data from plink")
+        print("reading data from plink...")
         geno, pheno = read_from_plink(small_set=False, subsample_control=True, encoding=enc_ver)
         # geno_preprocessed_file =
         print("done")
         if save_pickle:
-            print("writing to pickle")
+            print("writing to pickle...")
             with open(geno_file, "wb") as f:
                 pickle.dump(geno, f, pickle.HIGHEST_PROTOCOL)
             with open(pheno_file, "wb") as f:
                 pickle.dump(pheno, f, pickle.HIGHEST_PROTOCOL)
             print("done")
 
-    train, test = get_train_test(geno, pheno, batch_size, test_split)
-    return train, test, geno, pheno, enc_ver
+    train, test, pos_vec = get_train_test(geno, pheno, batch_size, test_split)
+    return train, test, geno, pheno, enc_ver, pos_vec
 
 def load_vocab_size():
     geno_file = MY_DIR + plink_base + '_encv-' + str(_ENC_VER) + '_geno_cache.pickle'

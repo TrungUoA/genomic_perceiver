@@ -79,7 +79,7 @@ N_CLASSES = 2
 # training setup and set this flag to False
 IS_LOCAL = False#True
 
-D_MODEL = 512
+D_MODEL = 36
 D_LATENTS = 1280
 MAX_SEQ_LEN = dataset.MAX_SEQ_LEN
 
@@ -99,11 +99,11 @@ def get_config():
   config = base_config.get_base_config()
 
   # Experiment config.
-  local_batch_size = 10
+  local_batch_size = 12
   # Modify this to adapt to your custom distributed learning setup
   num_devices = N_USED_DEVICES
   config.train_batch_size = local_batch_size * num_devices
-  config.n_epochs = 20 #110
+  config.n_epochs = 60 #110
 
   def _default_or_debug(default_value, debug_value):
     return debug_value if use_debug_settings else default_value
@@ -152,9 +152,9 @@ def get_config():
               model=dict(
                   perceiver_kwargs=dict(
                       encoder=dict(
-                          num_self_attends_per_block=_default_or_debug(8, 2),
+                          num_self_attends_per_block=_default_or_debug(6, 2),
                           # Weights won't be shared if num_blocks is set to 1.
-                          num_blocks=_default_or_debug(16, 2),
+                          num_blocks=_default_or_debug(12, 2),
                           z_index_dim=256,
                           num_z_channels=D_LATENTS,
                           num_cross_attend_heads=1,
@@ -199,7 +199,7 @@ def get_config():
                   ),
               evaluation=dict(
                   subset='test',
-                  batch_size=2,
+                  batch_size=8,
               ),
           )
       )
@@ -211,7 +211,7 @@ def get_config():
       config.get_oneway_ref('n_epochs'))
   config.log_train_data_interval = 60
   config.log_tensors_interval = 60
-  config.save_checkpoint_interval = 480
+  config.save_checkpoint_interval = 360
   config.eval_specific_checkpoint_dir = ''
   config.best_model_eval_metric = 'eval_top_1_acc'
   config.checkpoint_dir = '/tmp/perceiver_genome_checkpoints'
@@ -280,9 +280,12 @@ class Experiment(experiment.AbstractExperiment):
 
     batch_size = embedded_inputs.shape[0]
 
-    input_pos_encoding = perceiver.position_encoding.TrainablePositionEncoding(
-        index_dim=MAX_SEQ_LEN, num_channels=D_MODEL)
-    embedded_inputs = embedded_inputs + input_pos_encoding(batch_size)
+    input_pos_encoding = perceiver.position_encoding.FourierPositionEncoding(
+        index_dim=MAX_SEQ_LEN, num_bands=1024, num_channels=D_MODEL, max_resolution=(dataset.MAX_SNV_POS,))
+
+    #input_pos_encoding = perceiver.position_encoding.TrainablePositionEncoding(
+    #    index_dim=MAX_SEQ_LEN, num_channels=D_MODEL)
+    embedded_inputs = embedded_inputs + input_pos_encoding(batch_size, pos=dataset.pos)
     encoder = perceiver.PerceiverEncoder(**perceiver_kwargs['encoder'])
     decoder = perceiver.ClassificationDecoder(
         self.config.data.num_classes,
