@@ -164,11 +164,12 @@ def load(
 ) -> Generator[Batch, None, None]:
   """Loads the given split of the dataset."""
   total_batch_size = np.prod(batch_dims)
-  train, test, tokenizer, _, _, pos_vec = get_data(batch_size=total_batch_size, save_pickle=True)
+  train, test, tokenizer, _, _, pos_vec = get_data(enc_ver=2, batch_size=total_batch_size, save_pickle=True)
 
   global MAX_SNV_POS, pos
   MAX_SNV_POS = int( tokenizer.positions.max() )
-  pos = pos_vec
+  pos = np.repeat( pos_vec[:, None][None], batch_dims[-1], axis=0 )
+  #pos = np.repeat( pos, POS_DIM, axis=2 )
 
   # select a subset of the dataset defined by the "split"
   if split == "train":

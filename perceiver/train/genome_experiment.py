@@ -64,6 +64,8 @@ from perceiver.train import utils
 
 from snp_input import Tokenised_SNVs, load_vocab_size
 
+from jax.config import config
+#config.update('jax_disable_jit', True)
 VOCAB_SIZE = load_vocab_size()
 
 FLAGS = flags.FLAGS
@@ -79,7 +81,7 @@ N_CLASSES = 2
 # training setup and set this flag to False
 IS_LOCAL = False#True
 
-D_MODEL = 36
+D_MODEL = 256
 D_LATENTS = 1280
 MAX_SEQ_LEN = dataset.MAX_SEQ_LEN
 
@@ -99,7 +101,7 @@ def get_config():
   config = base_config.get_base_config()
 
   # Experiment config.
-  local_batch_size = 12
+  local_batch_size = 8
   # Modify this to adapt to your custom distributed learning setup
   num_devices = N_USED_DEVICES
   config.train_batch_size = local_batch_size * num_devices
@@ -152,9 +154,9 @@ def get_config():
               model=dict(
                   perceiver_kwargs=dict(
                       encoder=dict(
-                          num_self_attends_per_block=_default_or_debug(6, 2),
+                          num_self_attends_per_block=_default_or_debug(3, 2),
                           # Weights won't be shared if num_blocks is set to 1.
-                          num_blocks=_default_or_debug(12, 2),
+                          num_blocks=_default_or_debug(24, 2),
                           z_index_dim=256,
                           num_z_channels=D_LATENTS,
                           num_cross_attend_heads=1,
@@ -272,6 +274,7 @@ class Experiment(experiment.AbstractExperiment):
     perceiver_kwargs = self.config.model.perceiver_kwargs
 
     #assert input_tokens.shape[1] == MAX_SEQ_LEN
+    #FOURIER_BANDS = 238
 
     embedding_layer = hk.Embed(
         vocab_size=self.vocab_size,
@@ -281,11 +284,13 @@ class Experiment(experiment.AbstractExperiment):
     batch_size = embedded_inputs.shape[0]
 
     input_pos_encoding = perceiver.position_encoding.FourierPositionEncoding(
-        index_dim=MAX_SEQ_LEN, num_bands=1024, num_channels=D_MODEL, max_resolution=(dataset.MAX_SNV_POS,))
+        index_dims=(dataset.MAX_SEQ_LEN,), num_bands=D_MODEL, max_resolution=(dataset.MAX_SNV_POS,))
 
     #input_pos_encoding = perceiver.position_encoding.TrainablePositionEncoding(
     #    index_dim=MAX_SEQ_LEN, num_channels=D_MODEL)
-    embedded_inputs = embedded_inputs + input_pos_encoding(batch_size, pos=dataset.pos)
+    positional_encoding = input_pos_encoding(batch_size, pos=dataset.pos)
+    #embedded_inputs = jnp.concatenate( [embedded_inputs, positional_encoding], axis=-1 )
+    embedded_inputs = embedded_inputs + positional_encoding
     encoder = perceiver.PerceiverEncoder(**perceiver_kwargs['encoder'])
     decoder = perceiver.ClassificationDecoder(
         self.config.data.num_classes,

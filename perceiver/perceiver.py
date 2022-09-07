@@ -464,9 +464,11 @@ class PerceiverEncoder(hk.Module):
       attention_mask = make_cross_attention_mask(
           query_mask=jnp.ones(z.shape[:2], dtype=jnp.int32),
           kv_mask=input_mask)
-    z = self.cross_attend(z, inputs, is_training=is_training,
-                          attention_mask=attention_mask)
+    #z = self.cross_attend(z, inputs, is_training=is_training,
+    #                      attention_mask=attention_mask)
     for _ in range(self._num_blocks):
+      z = self.cross_attend(z, inputs, is_training=is_training,
+                            attention_mask=attention_mask)
       for self_attend in self.self_attends:
         z = self_attend(z, is_training=is_training)
     return z
