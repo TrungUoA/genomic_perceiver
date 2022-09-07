@@ -284,7 +284,7 @@ class Experiment(experiment.AbstractExperiment):
     batch_size = embedded_inputs.shape[0]
 
     input_pos_encoding = perceiver.position_encoding.FourierPositionEncoding(
-        index_dims=(dataset.MAX_SEQ_LEN,), num_bands=D_MODEL, max_resolution=(dataset.MAX_SNV_POS,))
+                            index_dims=(dataset.MAX_SEQ_LEN,), num_bands=int(D_MODEL/2), max_resolution=(dataset.MAX_SNV_POS,), concat_pos=False)
 
     #input_pos_encoding = perceiver.position_encoding.TrainablePositionEncoding(
     #    index_dim=MAX_SEQ_LEN, num_channels=D_MODEL)
